@@ -1,74 +1,44 @@
 pipeline {
-    agent any
-
-    environment {
-        DOCKER_REGISTRY = 'registry.hub.docker.com'
-        DOCKER_IMAGE = 'juanpa234/mi-app-docker'
-        DOCKER_CREDS = credentials('docker-hub-credentials')
+  agent any
+  environment {
+    IMAGE_NAME = "juanpa234/mi-app-docker"    // <- cambia por tu usuario/repo
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: 'main', url: 'https://github.com/juan2344/mi-app-docker.git'
+      }
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Build Image') {
-            steps {
-                script {
-                    docker.build("${DOCKER_IMAGE}:${env.BUILD_ID}")
-                }
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                script {
-                    def testImage = docker.image("${DOCKER_IMAGE}:${env.BUILD_ID}")
-                    testImage.inside {
-                        sh '''
-                            echo "Running container tests..."
-                            ps aux | grep nginx
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Push Image') {
-            steps {
-                script {
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-hub-credentials') {
-                        docker.image("${DOCKER_IMAGE}:${env.BUILD_ID}").push()
-                        docker.image("${DOCKER_IMAGE}:${env.BUILD_ID}").push('latest')
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to Test') {
-            steps {
-                script {
-                    sh """
-                    docker stop test-app || true
-                    docker rm test-app || true
-                    docker run -d -p 8081:80 --name test-app ${DOCKER_IMAGE}:${env.BUILD_ID}
-                    """
-                }
-            }
-        }
+    stage('Build Image') {
+      steps {
+        sh 'docker build -t $IMAGE_NAME:latest .'
+      }
     }
 
-    post {
-        always {
-            echo "Pipeline ${currentBuild.result?:'SUCCESS'}"
+    stage('Login to DockerHub & Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-cred',
+                                          usernameVariable: 'DOCKER_USER',
+                                          passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+          sh 'docker push $IMAGE_NAME:latest'
         }
-        success {
-            echo ' ¡Despliegue exitoso!'
-        }
-        failure {
-            echo ' Despliegue fallido'
-        }
+      }
     }
+
+    stage('Deploy (run container)') {
+      steps {
+        sh '''
+          docker rm -f mi_app || true
+          docker run -d --name mi_app -p 8090:80 $IMAGE_NAME:latest
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      sh 'docker system prune -af || true'
+    }
+  }
 }
