@@ -1,4 +1,5 @@
-# Dockerfile simple para servir PHP con Apache
-FROM php:8.2-apache
-COPY app/ /var/www/html/
+# Dockerfile (para servir app con nginx)
+FROM nginx:alpine
+WORKDIR /usr/share/nginx/html
+COPY app/index.html /usr/share/nginx/html/index.html
 EXPOSE 80
